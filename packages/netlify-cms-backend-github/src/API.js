@@ -19,6 +19,16 @@ export default class API {
   constructor(config) {
     this.api_root = config.api_root || 'https://api.github.com';
     this.token = config.token || false;
+    try {
+        this.store = localForage.instance('netlify_cms_store');
+        console.log("netlify_cms_store instance exists - no need to create again...")
+    }
+    catch (err) {
+        console.log("Creating a new netlify_cms_store since instance cannot be found.");
+        this.store = localForage.createInstance({
+            name: 'netlify_cms_store'
+        });
+    }
     this.branch = config.branch || 'master';
     this.originRepo = config.originRepo;
     this.useForkWorkflow = config.useForkWorkflow;
@@ -182,7 +192,7 @@ export default class API {
           const changeTree = await this.updateTree(branchData.sha, '/', fileTree);
           const { sha } = await this.commit(`Updating “${key}” metadata`, changeTree);
           await this.patchRef('meta', '_netlify_cms', sha);
-          localForage.setItem(`gh.meta.${key}`, {
+          this.store.setItem(`gh.meta.${key}`, {
             expires: Date.now() + 300000, // In 5 minutes
             data,
           });
@@ -196,7 +206,7 @@ export default class API {
   }
 
   retrieveMetadata(key) {
-    const cache = localForage.getItem(`gh.meta.${key}`);
+    const cache = this.store.getItem(`gh.meta.${key}`);
     return cache.then(cached => {
       if (cached && cached.expires > Date.now()) {
         return cached.data;
@@ -238,6 +248,7 @@ export default class API {
   }
 
   readFile(path, sha, { branch = this.branch, repoURL = this.repoURL } = {}) {
+      console.log(`File request: ${repoURL}/contents/${path}`);
     if (sha) {
       return this.getBlob(sha);
     } else {
@@ -261,7 +272,7 @@ export default class API {
   }
 
   getBlob(sha) {
-    return localForage.getItem(`gh.${sha}`).then(cached => {
+    return this.store.getItem(`gh.${sha}`).then(cached => {
       if (cached) {
         return cached;
       }
@@ -269,7 +280,7 @@ export default class API {
       return this.request(`${this.repoURL}/git/blobs/${sha}`, {
         headers: { Accept: 'application/vnd.github.VERSION.raw' },
       }).then(result => {
-        localForage.setItem(`gh.${sha}`, result);
+        this.store.setItem(`gh.${sha}`, result);
         return result;
       });
     });
